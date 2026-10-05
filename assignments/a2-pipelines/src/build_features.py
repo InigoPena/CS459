@@ -96,7 +96,7 @@ def rolling_aggs(ctx):
                 WINDOW w AS (
                     PARTITION BY restaurant_id
                     ORDER BY dt
-                    RANGE BETWEEN INTERVAL {WINDOW_DAYS} DAY PRECEDING AND CURRENT ROW
+                    RANGE BETWEEN INTERVAL {WINDOW_DAYS} DAY PRECEDING AND INTERVAL 1 DAY PRECEDING
                 )
             )
             SELECT
@@ -119,5 +119,5 @@ def write_aggs(ctx):
     aggs = ctx.output_of("rolling_aggs") / "aggs.parquet"
     ctx.con.execute(f"""
         COPY (SELECT *, '{ctx.run_id}' AS run_id FROM read_parquet('{aggs}'))
-        TO '{ctx.aggs_dir}' (FORMAT parquet, PARTITION_BY (dt), APPEND)
+        TO '{ctx.aggs_dir}' (FORMAT parquet, PARTITION_BY (dt), OVERWRITE_OR_IGNORE)
     """)
