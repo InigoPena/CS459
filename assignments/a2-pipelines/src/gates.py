@@ -31,7 +31,7 @@ and returns a GateResult(passed, observed, expected, detail). Everything but
 from src.runner import GateResult, gate
 
 
-@gate(name="rows_in_vs_trailing_7d", on_fail=None)
+@gate(name="rows_in_vs_trailing_7d", on_fail="warn")
 def rows_in_vs_trailing_7d(ctx, joined) -> GateResult:
     """Today's delivery count must be within 15% of the mean of the previous 7 days.
 
@@ -63,3 +63,34 @@ def rows_in_vs_trailing_7d(ctx, joined) -> GateResult:
         detail=f"today / trailing 7-day mean = {ratio:.3f}",
     )
 
+@gate(name="prep_time_minutes_mean", on_fail="quarentine")
+def prep_time_minutes_mean(ctx, joined) -> GateResult:
+    """The mean prep_time_minutes must be within 15% of the mean of the previous 7 days.
+
+    This is the check from the in-class incident. Read that slide again before you
+    trust it with anything.
+    """
+    today = ctx.con.execute(f"""
+        SELECT avg(prep_time_minutes) FROM {joined} WHERE delivery_date = DATE '{ctx.dt}'
+    """).fetchone()[0]
+
+    trailing = ctx.con.execute(f"""
+        SELECT avg(n) FROM (
+            SELECT avg(prep_time_minutes) AS n
+            FROM {joined}
+            WHERE delivery_date BETWEEN DATE '{ctx.dt}' - INTERVAL 7 DAY AND DATE '{ctx.dt}' - INTERVAL 1 DAY
+            GROUP BY delivery_date
+        )
+    """).fetchone()[0]
+
+    if trailing is None:
+        # The first days of the dataset have nothing to compare against.
+        return GateResult(passed=True, observed=today, expected=None, detail="no trailing history yet")
+
+    ratio = today / trailing
+    return GateResult(
+        passed=abs(ratio - 1) <= 0.15,
+        observed=today,
+        expected=f"{trailing:.0f} +/- 15%",
+        detail=f"today / trailing 7-day mean = {ratio:.3f}",
+    )
